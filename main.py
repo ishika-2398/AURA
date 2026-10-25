@@ -14,7 +14,7 @@ from gmail_service import fetch_live_order_emails_for_token
 
 load_dotenv()
 
-api_key = os.getenv("GROQ_API_KEY", "").strip()
+api_key = os.getenv("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", "").strip()
 client = Groq(api_key=api_key)
 
 ACTIVE_MODEL = "openai/gpt-oss-20b"
@@ -26,12 +26,22 @@ app = FastAPI()
 SESSION_SECRET = os.getenv("SESSION_SECRET", "aura-super-secret-key-prod-2026")
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 
+# Google OAuth Credentials Fallback
+# Paste your actual credentials from Google Cloud Console into the strings below:
+GOOGLE_CLIENT_ID = os.getenv(
+    "786796474890-b1loroghl9a7dqmvh6dn9s7i74r9mhcl.apps.googleusercontent.com",
+    
+)
+GOOGLE_CLIENT_SECRET = os.getenv(
+    "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"
+)
+
 # Google OAuth Setup
 oauth = OAuth()
 oauth.register(
     name="google",
-    client_id=os.getenv("GOOGLE_CLIENT_ID"),
-    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    client_id=GOOGLE_CLIENT_ID,
+    client_secret=GOOGLE_CLIENT_SECRET,
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_kwargs={
         "scope": "openid email profile https://www.googleapis.com/auth/gmail.readonly",
