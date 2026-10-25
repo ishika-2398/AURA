@@ -14,7 +14,7 @@ from gmail_service import fetch_live_order_emails_for_token
 
 load_dotenv()
 
-api_key = os.getenv("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", "").strip()
+api_key = os.getenv("GROQ_API_KEY", "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").strip()
 client = Groq(api_key=api_key)
 
 ACTIVE_MODEL = "openai/gpt-oss-20b"
