@@ -175,6 +175,43 @@
       100% { transform: scale(0.95); opacity: 0.8; }
     }
 
+    .auth-section {
+      margin-top: 6px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .user-label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .auth-btn {
+      display: block;
+      width: 100%;
+      text-align: center;
+      padding: 7px 10px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #ffffff;
+      background: #2563eb;
+      border-radius: 6px;
+      text-decoration: none;
+      transition: background 0.2s;
+    }
+
+    .auth-btn:hover {
+      opacity: 0.95;
+    }
+
     .history-container {
       flex: 1;
       overflow-y: auto;
@@ -241,7 +278,7 @@
     }
 
     .history-dots:hover {
-      background: rgba(255,255,255,0.1);
+      background: rgba(255, 255, 255, 0.1);
       color: #fff;
     }
 
@@ -254,7 +291,7 @@
       width: 150px;
       display: none;
       z-index: 200;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
     }
 
     .context-menu-item {
@@ -335,7 +372,7 @@
       width: 6px;
     }
     .chat-box::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.1);
+      background: rgba(255, 255, 255, 0.1);
       border-radius: 4px;
     }
 
@@ -346,7 +383,7 @@
       font-size: 0.94rem;
       line-height: 1.6;
       word-wrap: break-word;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
     }
 
     .message.user {
@@ -410,7 +447,7 @@
       margin: 14px 0;
       border-radius: 10px;
       border: 1px solid var(--border-color);
-      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
     }
 
     table {
@@ -735,9 +772,9 @@
           <span>AI Gateway</span>
           <span class="status-indicator"><span class="pulse-dot"></span> Online</span>
         </div>
-        <div class="status-row">
-          <span>Gmail Sync</span>
-          <span style="color:#38bdf8">Synced (Inbox)</span>
+        <div class="auth-section">
+          <div id="userLabel" class="user-label">Status: Guest</div>
+          <a id="authBtn" class="auth-btn" href="/auth/login">Connect Gmail</a>
         </div>
       </div>
 
@@ -759,7 +796,7 @@
             <span class="desk-badge">System Ready</span>
           </div>
           <div class="content-body">
-            Hello Ishika! I am AURA, your personal resolution assistant. Upload files or photos using the <strong>+</strong> button, or ask me about orders, banking, exam schedules, and timings!
+            Hello! I am AURA, your personal AI support assistant. Connect your Gmail above to sync your orders, upload documents via the <strong>+</strong> button, or ask about banking, deliveries, and records!
           </div>
         </div>
       </div>
@@ -809,6 +846,31 @@
     let latestFetchedOrders = [];
     let activeMenuIndex = null;
     let recognition = null;
+
+    async function checkAuthStatus() {
+      try {
+        const res = await fetch('/api/user-status');
+        const data = await res.json();
+        const userLabel = document.getElementById('userLabel');
+        const authBtn = document.getElementById('authBtn');
+
+        if (data && data.logged_in) {
+          userLabel.innerText = `Connected: ${data.name || data.email}`;
+          userLabel.style.color = '#10b981';
+          authBtn.innerText = 'Disconnect';
+          authBtn.href = '/auth/logout';
+          authBtn.style.background = '#dc2626';
+        } else {
+          userLabel.innerText = 'Status: Guest';
+          userLabel.style.color = '#94a3b8';
+          authBtn.innerText = 'Connect Gmail';
+          authBtn.href = '/auth/login';
+          authBtn.style.background = '#2563eb';
+        }
+      } catch (e) {
+        console.error("Auth status error", e);
+      }
+    }
 
     function playBeep() {
       try {
@@ -926,7 +988,7 @@
       activeMenuIndex = index;
       const rect = event.target.getBoundingClientRect();
       contextMenu.style.top = `${rect.bottom + 4}px`;
-      contextMenu.style.left = `${rect.left - 100}px`;
+      contextMenu.style.left = `${Math.max(10, rect.left - 100)}px`;
       contextMenu.style.display = "block";
     }
 
@@ -994,7 +1056,6 @@
         history: conversationHistory
       };
 
-      // Unlimited history sessions (no slice limit)
       savedSessions = [sessionData, ...savedSessions.filter(s => s.title !== cleanTitle)];
       localStorage.setItem("aura_sessions", JSON.stringify(savedSessions));
       renderSidebar();
@@ -1020,7 +1081,7 @@
       saveCurrentSession();
       chatBox.innerHTML = "";
       conversationHistory = [];
-      appendMessage("Hello Ishika! I am AURA, your personal resolution assistant. How can I assist you today across your logistics, banking, or academic inquiries?", "system", "System Ready");
+      appendMessage("Hello! I am AURA, your personal AI support assistant. How can I assist you today across your logistics, banking, or academic inquiries?", "system", "System Ready");
     }
 
     newChatBtn.addEventListener("click", resetChat);
@@ -1046,7 +1107,8 @@
           continue;
         } else if (inTable) {
           result += buildHtmlTable(tableRows);
-          inTable = false; tableRows = [];
+          inTable = false;
+          tableRows = [];
         }
 
         const listMatch = line.match(/^(\d+\.|\-|\*|•)\s+(.*)/);
@@ -1054,11 +1116,17 @@
           if (!inList) { result += "<ul>"; inList = true; }
           result += `<li>${listMatch[2]}</li>`;
           continue;
-        } else if (inList) { result += "</ul>"; inList = false; }
+        } else if (inList) {
+          result += "</ul>";
+          inList = false;
+        }
 
         if (line.length > 0) {
-          if (line.startsWith("<h3>")) { result += line; }
-          else { result += `<p>${line}</p>`; }
+          if (line.startsWith("<h3>")) {
+            result += line;
+          } else {
+            result += `<p>${line}</p>`;
+          }
         }
       }
 
@@ -1075,7 +1143,8 @@
       html += '</tr></thead><tbody>';
 
       for (let r = 1; r < rows.length; r++) {
-        const cells = rows[r].split("|").map(s => s.trim()).filter((s, idx, arr) => idx > 0 && idx < arr.length - 1);
+        const rawCells = rows[r].split("|").map(s => s.trim());
+        const cells = rawCells.slice(1, rawCells.length - 1);
         html += '<tr>';
         cells.forEach(c => { html += `<td>${c}</td>`; });
         html += '</tr>';
@@ -1143,7 +1212,8 @@
                 } else {
                   speakText(text);
                   btn.textContent = "⏸️ Pause Audio";
-                  setTimeout(() => { btn.textContent = "🔊 Read Aloud"; }, (text.length * 70));
+                  const timeoutMs = Math.max(2000, text.length * 65);
+                  setTimeout(() => { btn.textContent = "🔊 Read Aloud"; }, timeoutMs);
                 }
               } else {
                 handleRealAction(actionText);
@@ -1311,6 +1381,7 @@
     });
 
     renderSidebar();
+    window.addEventListener("DOMContentLoaded", checkAuthStatus);
   </script>
 </body>
 </html>
