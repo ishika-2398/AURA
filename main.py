@@ -28,13 +28,9 @@ app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 
 # Google OAuth Credentials Fallback
 # Paste your actual credentials from Google Cloud Console into the strings below:
-GOOGLE_CLIENT_ID = os.getenv(
-    "786796474890-b1loroghl9a7dqmvh6dn9s7i74r9mhcl.apps.googleusercontent.com",
-    
-)
-GOOGLE_CLIENT_SECRET = os.getenv(
-    "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"
-)
+# Force-set the verified client credentials
+GOOGLE_CLIENT_ID = "786796474890-b1loroghl9a7dqmvh6dn9s7i74r9mhcl.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET = "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"
 
 # Google OAuth Setup
 oauth = OAuth()
@@ -48,6 +44,7 @@ oauth.register(
         "prompt": "consent"
     }
 )
+
 
 def get_db_connection():
     conn = sqlite3.connect("aura_records.db")
@@ -142,6 +139,7 @@ class ChatInput(BaseModel):
 @app.get("/auth/login")
 async def login(request: Request):
     redirect_uri = "https://aura-vz7f.onrender.com/auth/callback"
+    print(f"DEBUG AUTH: Using client_id={GOOGLE_CLIENT_ID[:15]}... and redirect_uri={redirect_uri}")
     return await oauth.google.authorize_redirect(request, redirect_uri, access_type="offline")
 
 @app.get("/auth/callback")
