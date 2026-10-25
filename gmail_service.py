@@ -1,4 +1,3 @@
-import os
 import base64
 import re
 from google.oauth2.credentials import Credentials
@@ -6,10 +5,9 @@ from googleapiclient.discovery import build
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
-def get_gmail_service():
-    if not os.path.exists('token.json'):
-        raise FileNotFoundError("token.json not found. Please authenticate first.")
-    creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+def get_gmail_service_from_token(access_token: str):
+    """Builds a Gmail service instance dynamically using the visitor's OAuth access token."""
+    creds = Credentials(token=access_token, scopes=SCOPES)
     return build('gmail', 'v1', credentials=creds)
 
 def clean_html(raw_html: str) -> str:
@@ -40,10 +38,10 @@ def extract_body(payload: dict) -> str:
             body_text += decoded
     return body_text
 
-def fetch_live_order_emails(limit=5):
+def fetch_live_order_emails_for_token(access_token: str, limit=5):
     try:
-        service = get_gmail_service()
-        query = '(from:mamaearth OR from:ajio OR from:amazon OR from:flipkart) (order OR delivered OR shipped OR dispatched OR tracking OR canceled OR cancelled)'
+        service = get_gmail_service_from_token(access_token)
+        query = '(from:mamaearth OR from:ajio OR from:amazon OR from:flipkart OR from:myntra OR from:zomato OR from:swiggy) (order OR delivered OR shipped OR dispatched OR tracking OR refund OR canceled OR cancelled)'
         
         results = service.users().messages().list(userId='me', q=query, maxResults=limit).execute()
         messages = results.get('messages', [])
@@ -67,5 +65,5 @@ def fetch_live_order_emails(limit=5):
             
         return email_records
     except Exception as e:
-        print(f"Gmail sync warning: {e}")
+        print(f"Per-user Gmail sync notice: {e}")
         return []

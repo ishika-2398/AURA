@@ -3,12 +3,14 @@ import json
 import sqlite3
 import base64
 from typing import List, Optional, Any
-from fastapi import FastAPI, BackgroundTasks, UploadFile, File, Form
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, UploadFile, File, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from starlette.middleware.sessions import SessionMiddleware
+from authlib.integrations.starlette_client import OAuth
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from groq import Groq
-from gmail_service import fetch_live_order_emails
+from gmail_service import fetch_live_order_emails_for_token
 
 load_dotenv()
 
@@ -20,57 +22,87 @@ VISION_MODEL = "qwen/qwen3.8-27b"
 
 app = FastAPI()
 
+# Session Middleware to store each user's login state securely in browser cookies
+SESSION_SECRET = os.getenv("SESSION_SECRET", "aura-super-secret-key-prod-2026")
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
+
+# Google OAuth Setup
+oauth = OAuth()
+oauth.register(
+    name="google",
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={
+        "scope": "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+        "prompt": "consent"
+    }
+)
+
 def get_db_connection():
     conn = sqlite3.connect("aura_records.db")
     conn.row_factory = sqlite3.Row
     return conn
 
-def get_saved_db_data():
+def init_db():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS orders (
+            order_id TEXT PRIMARY KEY,
+            user_email TEXT,
+            platform TEXT,
+            item_name TEXT,
+            carrier TEXT,
+            tracking_id TEXT,
+            status TEXT,
+            eta TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS uploads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_email TEXT,
+            filename TEXT,
+            content TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ai_memory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_email TEXT,
+            fact TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def get_user_db_data(user_email: str):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS orders (
-                order_id TEXT PRIMARY KEY,
-                platform TEXT,
-                item_name TEXT,
-                carrier TEXT,
-                tracking_id TEXT,
-                status TEXT,
-                eta TEXT
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS uploads (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                filename TEXT,
-                content TEXT
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ai_memory (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                fact TEXT UNIQUE
-            )
-        """)
-        conn.commit()
-
         rows = cursor.execute("""
             SELECT order_id, platform, item_name, carrier, tracking_id, status, eta
             FROM orders
+            WHERE user_email = ?
             GROUP BY order_id
-            LIMIT 4
-        """).fetchall()
+            LIMIT 5
+        """, (user_email,)).fetchall()
         orders = [dict(r) for r in rows]
         
-        up_rows = cursor.execute("SELECT filename, content FROM uploads ORDER BY id DESC LIMIT 5").fetchall()
+        up_rows = cursor.execute(
+            "SELECT filename, content FROM uploads WHERE user_email = ? ORDER BY id DESC LIMIT 5",
+            (user_email,)
+        ).fetchall()
         uploads = [dict(r) for r in up_rows]
         
-        # Optimized recent memory window to completely prevent TPD (daily) and TPM (minute) rate limits
-        mem_rows = cursor.execute("SELECT fact FROM ai_memory ORDER BY id DESC LIMIT 20").fetchall()
+        mem_rows = cursor.execute(
+            "SELECT fact FROM ai_memory WHERE user_email = ? ORDER BY id DESC LIMIT 15",
+            (user_email,)
+        ).fetchall()
         memories = [r["fact"] for r in mem_rows]
         
         conn.close()
@@ -79,16 +111,14 @@ def get_saved_db_data():
         print(f"DB Error: {e}")
         return [], [], []
 
-def save_dynamic_memory(user_msg: str):
-    """Universally captures and saves any statement or detail shared by the user into SQLite."""
+def save_user_dynamic_memory(user_email: str, user_msg: str):
     msg = user_msg.strip()
     if not msg or msg.endswith("?"):
         return
-
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("INSERT OR IGNORE INTO ai_memory (fact) VALUES (?)", (msg,))
+        cursor.execute("INSERT INTO ai_memory (user_email, fact) VALUES (?, ?)", (user_email, msg))
         conn.commit()
         conn.close()
     except Exception as e:
@@ -98,8 +128,51 @@ class ChatInput(BaseModel):
     message: str
     history: Optional[List[Any]] = []
 
+# --- OAuth Routes ---
+@app.get("/auth/login")
+async def login(request: Request):
+    redirect_uri = "https://aura-vz7f.onrender.com/auth/callback"
+    return await oauth.google.authorize_redirect(request, redirect_uri, access_type="offline")
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request):
+    try:
+        token = await oauth.google.authorize_access_token(request)
+        user_info = token.get("userinfo")
+        if not user_info:
+            user_info = await oauth.google.userinfo(token=token)
+        
+        request.session["user"] = {
+            "email": user_info.get("email"),
+            "name": user_info.get("name"),
+            "access_token": token.get("access_token")
+        }
+        return RedirectResponse(url="/")
+    except Exception as e:
+        return HTMLResponse(f"<h3>Authentication error: {e}</h3><br><a href='/'>Go Back</a>")
+
+@app.get("/auth/logout")
+def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse(url="/")
+
+@app.get("/api/user-status")
+def user_status(request: Request):
+    user = request.session.get("user")
+    if user:
+        return {"logged_in": True, "name": user.get("name"), "email": user.get("email")}
+    return {"logged_in": False, "name": "Guest", "email": None}
+
+@app.get("/", response_class=HTMLResponse)
+def home():
+    with open("index.html", "r") as file:
+        return file.read()
+
 @app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(request: Request, file: UploadFile = File(...)):
+    user = request.session.get("user")
+    user_email = user.get("email") if user else "guest"
+    
     try:
         contents = await file.read()
         filename_lower = file.filename.lower()
@@ -115,16 +188,8 @@ async def upload_file(file: UploadFile = File(...)):
                     {
                         "role": "user",
                         "content": [
-                            {
-                                "type": "text",
-                                "text": "Extract all text, titles, names, certificate details, exam schedules, or timings from this image precisely."
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:{mime_type};base64,{base64_image}"
-                                }
-                            }
+                            {"type": "text", "text": "Extract all text, titles, names, certificate details, exam schedules, or timings from this image precisely."},
+                            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}}
                         ]
                     }
                 ],
@@ -138,7 +203,7 @@ async def upload_file(file: UploadFile = File(...)):
 
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO uploads (filename, content) VALUES (?, ?)", (file.filename, safe_text_content))
+        cursor.execute("INSERT INTO uploads (user_email, filename, content) VALUES (?, ?, ?)", (user_email, file.filename, safe_text_content))
         conn.commit()
         conn.close()
         
@@ -146,26 +211,13 @@ async def upload_file(file: UploadFile = File(...)):
             "status": "success", 
             "filename": file.filename, 
             "extracted_text": safe_text_content,
-            "message": f"Successfully read and permanently stored '{file.filename}' in database memory!"
+            "message": f"Successfully stored '{file.filename}' for your account!"
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-@app.get("/", response_class=HTMLResponse)
-def home():
-    with open("index.html", "r") as file:
-        return file.read()
-
-KNOWLEDGE_CONTEXT = """
-[USER PROFILE]:
-1. Academic: College: TKR Engineering College (DCSE) | PIN: 24248-CS-066 | SBTET 2nd Sem Result: 9.5 SGPA (190/200 points).
-2. Banking/Refund: Mamaearth Order #2355507 | Refund: ₹371.55 via UPI on Aug 17, 2026 | Bank RRN: 103869968943.
-"""
-
 def detect_ui_metadata(user_msg: str, ai_reply: str):
     combined = (user_msg + " " + ai_reply).lower()
-    
-    # Smart Priority Detection
     if any(k in combined for k in ["unauthorized", "hacked", "stolen", "fraud", "scam"]):
         priority = "High Priority 🚨"
     elif any(k in combined for k in ["failed", "deducted", "unpaid", "dispute", "error"]):
@@ -173,48 +225,58 @@ def detect_ui_metadata(user_msg: str, ai_reply: str):
     else:
         priority = "Normal ✅"
 
-    # Multi-Domain Crossover & Desk Routing
     if "bank" in combined and ("college" in combined or "fee" in combined or "portal" in combined):
         return f"Cross-Domain [Banking + Education] ({priority})", ["Verify RRN", "Exam Results", "Show My Orders"]
-    if any(k in combined for k in ["order id", "mamaearth", "ajio", "tracking", "awb", "shipment"]):
+    if any(k in combined for k in ["order id", "mamaearth", "ajio", "amazon", "flipkart", "tracking", "awb", "shipment"]):
         return f"E-Commerce Desk [Live] ({priority})", ["Track Courier", "View Invoice", "Delivery Updates"]
-    if any(k in combined for k in ["rrn", "371.55", "refund", "upi", "chargeback", "bank"]):
+    if any(k in combined for k in ["rrn", "refund", "upi", "chargeback", "bank"]):
         return f"Banking & Finance Desk [Verified] ({priority})", ["Verify RRN", "Banking & Refunds", "Show My Orders"]
-    if any(k in combined for k in ["sgpa", "24248-cs-066", "sbtet", "tkr", "diploma", "exam", "schedule", "timing", "result", "certificate"]):
+    if any(k in combined for k in ["sgpa", "pin", "diploma", "exam", "schedule", "timing", "result", "certificate"]):
         return f"Academic Desk [Verified] ({priority})", ["Exam Results", "Show My Orders", "Banking & Refunds"]
     
     return f"AURA Intelligence [Online] ({priority})", ["Show My Orders", "Banking & Refunds", "Exam Results"]
 
 @app.post("/api/chat")
-def handle_chat(payload: ChatInput):
+def handle_chat(payload: ChatInput, request: Request):
+    user = request.session.get("user")
+    user_email = user.get("email") if user else "guest"
+    user_name = user.get("name") if user else "User"
+    
     user_msg = payload.message.strip()
+    save_user_dynamic_memory(user_email, user_msg)
     
-    # Universally save any non-question statement into SQLite
-    save_dynamic_memory(user_msg)
-    
-    db_orders, db_uploads, db_memories = get_saved_db_data()
+    db_orders, db_uploads, db_memories = get_user_db_data(user_email)
 
-    sys_prompt = f"""You are AURA, an intelligent, warm personal AI support assistant for Ishika Dadaiahpalli.
-You manage 3 primary desks: E-Commerce Logistics, Banking/UPI Refunds, and Academic Records. You also handle cross-domain inquiries seamlessly.
+    live_emails = []
+    if user and user.get("access_token"):
+        live_emails = fetch_live_order_emails_for_token(user.get("access_token"), limit=3)
 
-{KNOWLEDGE_CONTEXT}
+    user_context = f"User Name: {user_name} | Email: {user_email}"
+    if not user:
+        user_context += " (Guest user - not signed in with Google yet. Advise them they can connect their Gmail for live order sync)."
 
-[UNIVERSAL CONVERSATIONAL MEMORY (Every detail and statement shared by the user across all sessions)]:
+    sys_prompt = f"""You are AURA, an intelligent universal personal AI support platform assisting {user_name}.
+You manage 3 primary desks: E-Commerce Logistics, Banking/UPI Refunds, and Academic Records.
+
+[CURRENT USER]:
+{user_context}
+
+[USER ISOLATED CONVERSATIONAL MEMORY]:
 {json.dumps(db_memories)}
 
-[LIVE ORDERS]:
+[USER ORDERS & DATABASE RECORDS]:
 {json.dumps(db_orders)}
 
-[PERMANENT DATABASE KNOWLEDGE BASE & UPLOADED FILES]:
+[USER UPLOADED FILES]:
 {json.dumps(db_uploads)}
 
+[USER LIVE GMAIL INBOX EMAILS]:
+{json.dumps(live_emails)}
+
 Guidelines:
-- You have permanent cross-session memory stored in the SQLite database (including all past statements, user facts, and uploaded files shown above). Always use this stored data to answer questions across any new session.
-- Converse naturally and directly like a smart, friendly assistant.
-- NEVER attempt to call tools, functions, or output JSON format tags. Always output plain text and Markdown.
-- When asked about orders, format them in a clean Markdown table:
-| Order ID | Platform / Merchant | Product(s) | Logistics Partner | Tracking / AWB | Delivery Status | ETA / Delivery Details |
-|---|---|---|---|---|---|---|
+- Only reference the data belonging to THIS user ({user_name}). Never share or assume other users' personal info.
+- If the user asks about orders, check [USER LIVE GMAIL INBOX EMAILS] and [USER ORDERS & DATABASE RECORDS]. If none exist, state clearly that no orders were found for their account and provide helpful guidance.
+- When displaying orders, format them into a clean Markdown table.
 """
 
     messages = [{"role": "system", "content": sys_prompt}]
@@ -247,8 +309,8 @@ Guidelines:
             "actions": ["Show My Orders", "Banking & Refunds", "Exam Results"],
             "orders": db_orders
         }
-    if __name__ == "__main__":
-     import uvicorn
-     import os
+
+if __name__ == "__main__":
+    import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
