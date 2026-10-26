@@ -4,7 +4,7 @@ import sqlite3
 import base64
 from typing import List, Optional, Any
 from fastapi import FastAPI, UploadFile, File, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
 from pydantic import BaseModel
@@ -27,8 +27,7 @@ SESSION_SECRET = os.getenv("SESSION_SECRET", "aura-super-secret-key-prod-2026")
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 
 # Google OAuth Credentials Fallback
-# Paste your actual credentials from Google Cloud Console into the strings below:
-# Force-set the verified client credentials
+
 GOOGLE_CLIENT_ID = "786796474890-b1loroghl9a7dqmvh6dn9s7i74r9mhcl.apps.googleusercontent.com"
 GOOGLE_CLIENT_SECRET = "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"
 
@@ -135,6 +134,20 @@ class ChatInput(BaseModel):
     message: str
     history: Optional[List[Any]] = []
 
+# --- Verification & Policy Routes ---
+@app.get("/googled312b44987ddae3a.html")
+async def google_verification():
+    if os.path.exists("googled312b44987ddae3a.html"):
+        return FileResponse("googled312b44987ddae3a.html")
+    return HTMLResponse("google-site-verification: googled312b44987ddae3a.html")
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy_policy():
+    if os.path.exists("privacy.html"):
+        with open("privacy.html", "r", encoding="utf-8") as file:
+            return file.read()
+    return HTMLResponse("<h1>AURA Universal Sync Privacy Policy</h1><p>Contact: dadaiahpalliishika@gmail.com</p>")
+
 # --- OAuth Routes ---
 @app.get("/auth/login")
 async def login(request: Request):
@@ -173,7 +186,7 @@ def user_status(request: Request):
 
 @app.get("/", response_class=HTMLResponse)
 def home():
-    with open("index.html", "r") as file:
+    with open("index.html", "r", encoding="utf-8") as file:
         return file.read()
 
 @app.post("/api/upload")

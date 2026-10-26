@@ -286,6 +286,24 @@
             color: #fff;
         }
 
+        .sidebar-footer {
+            margin-top: auto;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-color);
+            font-size: 0.76rem;
+            flex-shrink: 0;
+        }
+
+        .sidebar-footer a {
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .sidebar-footer a:hover {
+            color: var(--primary);
+        }
+
         .context-menu {
             position: absolute;
             background: #172033;
@@ -764,8 +782,8 @@
       <div class="sidebar-brand">
         <div class="brand-logo">A</div>
         <div>
-          <div class="brand-title">AURA AI</div>
-          <div class="brand-subtitle">Universal Resolution</div>
+          <div class="brand-title">AURA Universal Sync</div>
+          <div class="brand-subtitle">Universal Resolution & Order Tracking</div>
         </div>
       </div>
 
@@ -787,6 +805,10 @@
       <div class="history-container">
         <div class="history-list" id="historyList"></div>
       </div>
+
+      <div class="sidebar-footer">
+        <a href="/privacy" target="_blank">Privacy Policy</a>
+      </div>
     </aside>
 
     <main class="chat-wrapper">
@@ -801,7 +823,7 @@
             <span class="desk-badge">System Ready</span>
           </div>
           <div class="content-body">
-            Hello! I am AURA, your personal AI support assistant. Connect your Gmail above to sync your orders, upload documents via the <strong>+</strong> button, or ask about banking, deliveries, and records!
+            Hello! I am AURA Universal Sync, your personal AI support assistant. Connect your Gmail above to sync your orders, upload documents via the <strong>+</strong> button, or ask about banking, deliveries, and records!
           </div>
         </div>
       </div>
@@ -1086,7 +1108,7 @@
       saveCurrentSession();
       chatBox.innerHTML = "";
       conversationHistory = [];
-      appendMessage("Hello! I am AURA, your personal AI support assistant. How can I assist you today across your logistics, banking, or academic inquiries?", "system", "System Ready");
+      appendMessage("Hello! I am AURA Universal Sync, your personal AI support assistant. How can I assist you today across your logistics, banking, or academic inquiries?", "system", "System Ready");
     }
 
     newChatBtn.addEventListener("click", resetChat);
