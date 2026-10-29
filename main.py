@@ -14,7 +14,8 @@ from gmail_service import fetch_live_order_emails_for_token
 
 load_dotenv()
 
-api_key = os.getenv("GROQ_API_KEY", "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").strip()
+# Force-set the working key directly
+api_key = "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".strip()
 client = Groq(api_key=api_key)
 
 ACTIVE_MODEL = "openai/gpt-oss-20b"
@@ -151,8 +152,11 @@ def privacy_policy():
 # --- OAuth Routes ---
 @app.get("/auth/login")
 async def login(request: Request):
-    redirect_uri = "https://aura-vz7f.onrender.com/auth/callback"
-    print(f"DEBUG AUTH: Using client_id={GOOGLE_CLIENT_ID[:15]}... and redirect_uri={redirect_uri}")
+    # Dynamically detects whether you are on 127.0.0.1 or onrender.com
+    redirect_uri = str(request.url_for("auth_callback"))
+    if "onrender.com" in redirect_uri:
+        redirect_uri = redirect_uri.replace("http://", "https://")
+    print(f"DEBUG AUTH: Using redirect_uri={redirect_uri}")
     return await oauth.google.authorize_redirect(request, redirect_uri, access_type="offline")
 
 @app.get("/auth/callback")
