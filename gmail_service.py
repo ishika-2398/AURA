@@ -38,10 +38,20 @@ def extract_body(payload: dict) -> str:
             body_text += decoded
     return body_text
 
-def fetch_live_order_emails_for_token(access_token: str, limit=5):
+def fetch_live_order_emails_for_token(access_token: str, limit=10):
+    """
+    Fetches real-time e-commerce order confirmation, shipping, and receipt emails
+    across all platforms (Purplle, Amazon, Flipkart, Nykaa, Myntra, Swiggy, Meesho, etc.).
+    """
     try:
         service = get_gmail_service_from_token(access_token)
-        query = '(from:mamaearth OR from:ajio OR from:amazon OR from:flipkart OR from:myntra OR from:zomato OR from:swiggy) (order OR delivered OR shipped OR dispatched OR tracking OR refund OR canceled OR cancelled)'
+        
+        # Universal query capturing transactional emails from all e-commerce platforms
+        query = (
+            '(subject:(order OR "order confirmed" OR "order placed" OR "shipped" OR "delivered" '
+            'OR "out for delivery" OR dispatched OR "tracking" OR invoice OR receipt OR AWB OR refund) '
+            'OR "order id" OR "tracking number") -category:promotions -category:social'
+        )
         
         results = service.users().messages().list(userId='me', q=query, maxResults=limit).execute()
         messages = results.get('messages', [])
@@ -53,14 +63,19 @@ def fetch_live_order_emails_for_token(access_token: str, limit=5):
             snippet = msg_data.get('snippet', '')
             
             headers = payload.get('headers', [])
-            subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), '')
+            subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
+            sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'Unknown Sender')
             
             body = extract_body(payload)
-            text_content = f"Subject: {subject}\nBody: {body if len(body.strip()) > 30 else snippet}"
+            body_clean = body.strip() if len(body.strip()) > 30 else snippet
+            
+            text_content = f"Store/Sender: {sender}\nSubject: {subject}\nSnippet: {snippet}\nDetails: {body_clean[:1800]}"
             
             email_records.append({
                 "message_id": msg['id'],
-                "text": text_content[:2500]
+                "sender": sender,
+                "subject": subject,
+                "text": text_content
             })
             
         return email_records

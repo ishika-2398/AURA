@@ -14,8 +14,8 @@ from gmail_service import fetch_live_order_emails_for_token
 
 load_dotenv()
 
-# Force-set the working key directly
-api_key = "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".strip()
+# Force-set working API credentials
+api_key = os.getenv("GROQ_API_KEY", "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").strip()
 client = Groq(api_key=api_key)
 
 ACTIVE_MODEL = "openai/gpt-oss-20b"
@@ -28,9 +28,8 @@ SESSION_SECRET = os.getenv("SESSION_SECRET", "aura-super-secret-key-prod-2026")
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 
 # Google OAuth Credentials Fallback
-
-GOOGLE_CLIENT_ID = "786796474890-b1loroghl9a7dqmvh6dn9s7i74r9mhcl.apps.googleusercontent.com"
-GOOGLE_CLIENT_SECRET = "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"
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "786796474890-b1loroghl9a7dqmvh6dn9s7i74r9mhcl.apps.googleusercontent.com")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "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")
 
 # Google OAuth Setup
 oauth = OAuth()
@@ -44,7 +43,6 @@ oauth.register(
         "prompt": "consent"
     }
 )
-
 
 def get_db_connection():
     conn = sqlite3.connect("aura_records.db")
@@ -152,11 +150,9 @@ def privacy_policy():
 # --- OAuth Routes ---
 @app.get("/auth/login")
 async def login(request: Request):
-    # Dynamically detects whether you are on 127.0.0.1 or onrender.com
     redirect_uri = str(request.url_for("auth_callback"))
     if "onrender.com" in redirect_uri:
         redirect_uri = redirect_uri.replace("http://", "https://")
-    print(f"DEBUG AUTH: Using redirect_uri={redirect_uri}")
     return await oauth.google.authorize_redirect(request, redirect_uri, access_type="offline")
 
 @app.get("/auth/callback")
@@ -252,10 +248,19 @@ def detect_ui_metadata(user_msg: str, ai_reply: str):
 
     if "bank" in combined and ("college" in combined or "fee" in combined or "portal" in combined):
         return f"Cross-Domain [Banking + Education] ({priority})", ["Verify RRN", "Exam Results", "Show My Orders"]
-    if any(k in combined for k in ["order id", "mamaearth", "ajio", "amazon", "flipkart", "tracking", "awb", "shipment"]):
-        return f"E-Commerce Desk [Live] ({priority})", ["Track Courier", "View Invoice", "Delivery Updates"]
-    if any(k in combined for k in ["rrn", "refund", "upi", "chargeback", "bank"]):
+    
+    # Universal check for e-commerce, tracking, packages, or specific platforms
+    ecommerce_keywords = [
+        "order", "orders", "purplle", "purple", "nykaa", "amazon", "flipkart", 
+        "myntra", "ajio", "meesho", "mamaearth", "swiggy", "zomato", "blinkit", 
+        "tracking", "awb", "courier", "shipment", "delivery", "delivered", "package"
+    ]
+    if any(k in combined for k in ecommerce_keywords):
+        return f"E-Commerce Desk [Live] ({priority})", ["Show My Orders", "Track Courier", "Delivery Updates"]
+        
+    if any(k in combined for k in ["rrn", "refund", "upi", "chargeback", "bank", "transaction"]):
         return f"Banking & Finance Desk [Verified] ({priority})", ["Verify RRN", "Banking & Refunds", "Show My Orders"]
+        
     if any(k in combined for k in ["sgpa", "pin", "diploma", "exam", "schedule", "timing", "result", "certificate"]):
         return f"Academic Desk [Verified] ({priority})", ["Exam Results", "Show My Orders", "Banking & Refunds"]
     
@@ -274,11 +279,12 @@ def handle_chat(payload: ChatInput, request: Request):
 
     live_emails = []
     if user and user.get("access_token"):
-        live_emails = fetch_live_order_emails_for_token(user.get("access_token"), limit=3)
+        # Retrieve up to 10 live order emails across all stores
+        live_emails = fetch_live_order_emails_for_token(user.get("access_token"), limit=10)
 
     user_context = f"User Name: {user_name} | Email: {user_email}"
     if not user:
-        user_context += " (Guest user - not signed in with Google yet. Advise them they can connect their Gmail for live order sync)."
+        user_context += " (Guest user - not signed in with Google yet. Prompt them to connect Gmail via the sidebar to view their orders)."
 
     sys_prompt = f"""You are AURA, an intelligent universal personal AI support platform assisting {user_name}.
 You manage 3 primary desks: E-Commerce Logistics, Banking/UPI Refunds, and Academic Records.
@@ -299,9 +305,10 @@ You manage 3 primary desks: E-Commerce Logistics, Banking/UPI Refunds, and Acade
 {json.dumps(live_emails)}
 
 Guidelines:
-- Only reference the data belonging to THIS user ({user_name}). Never share or assume other users' personal info.
-- If the user asks about orders, check [USER LIVE GMAIL INBOX EMAILS] and [USER ORDERS & DATABASE RECORDS]. If none exist, state clearly that no orders were found for their account and provide helpful guidance.
-- When displaying orders, format them into a clean Markdown table.
+- When the user asks about recent or latest orders, thoroughly check [USER LIVE GMAIL INBOX EMAILS]. Extract the store name (e.g., Purplle, Amazon, Nykaa, Flipkart), items purchased, order ID/number, tracking link/number, and shipment status.
+- Present orders clearly using a structured Markdown table with columns: Platform / Store | Item / Description | Order ID | Status / Tracking.
+- If live order emails are present in [USER LIVE GMAIL INBOX EMAILS], summarize them accurately without saying you could not find orders.
+- Only if both [USER LIVE GMAIL INBOX EMAILS] and [USER ORDERS & DATABASE RECORDS] are completely empty should you explain that no recent order confirmations were found.
 """
 
     messages = [{"role": "system", "content": sys_prompt}]
@@ -316,8 +323,8 @@ Guidelines:
         completion = client.chat.completions.create(
             messages=messages,
             model=ACTIVE_MODEL,
-            temperature=0.6,
-            max_tokens=500
+            temperature=0.5,
+            max_tokens=600
         )
         ai_reply = completion.choices[0].message.content.strip()
         domain, actions = detect_ui_metadata(user_msg, ai_reply)
