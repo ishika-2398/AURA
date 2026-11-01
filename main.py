@@ -22,8 +22,40 @@ _decoded_key = base64.b64decode(_ENCODED_FALLBACK.encode()).decode("utf-8") if _
 api_key = (os.getenv("GROQ_API_KEY") or _decoded_key).strip()
 client = Groq(api_key=api_key)
 
-ACTIVE_MODEL = "gemma2-9b-it"
-VISION_MODEL = "qwen/qwen3.8-27b"
+# Dynamically select supported models directly from your live Groq account tier
+def get_active_groq_models(groq_client):
+    try:
+        model_objs = groq_client.models.list().data
+        active_ids = [m.id for m in model_objs if getattr(m, "active", True)]
+        
+        # Priority preferences for text chat models
+        chat_candidates = [
+            m for m in active_ids 
+            if not any(x in m for x in ["vision", "whisper", "guard", "embed"])
+        ]
+        priority_models = [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "qwen-2.5-32b",
+            "mixtral-8x7b-32768"
+        ]
+        chosen_chat = next((m for m in priority_models if m in chat_candidates), None)
+        if not chosen_chat and chat_candidates:
+            chosen_chat = chat_candidates[0]
+        if not chosen_chat:
+            chosen_chat = "llama-3.1-8b-instant"
+
+        # Vision model fallback selection
+        vision_candidates = [m for m in active_ids if "vision" in m]
+        chosen_vision = vision_candidates[0] if vision_candidates else "llama-3.2-11b-vision-preview"
+
+        return chosen_chat, chosen_vision
+    except Exception as e:
+        print(f"Model autodiscovery fallback due to: {e}")
+        return "llama-3.1-8b-instant", "llama-3.2-11b-vision-preview"
+
+ACTIVE_MODEL, VISION_MODEL = get_active_groq_models(client)
+print(f"--> Bound to active Groq models: Chat='{ACTIVE_MODEL}', Vision='{VISION_MODEL}'")
 
 app = FastAPI()
 
@@ -288,11 +320,10 @@ def handle_chat(payload: ChatInput, request: Request):
 
     live_emails = []
     if user and user.get("access_token"):
-        # Limit to the 5 most recent emails to stay well within token budgets
+        # Limit to the 5 most recent emails to prevent 413 token overflow
         raw_emails = fetch_live_order_emails_for_token(user.get("access_token"), limit=5)
         for em in raw_emails:
             clean_em = dict(em)
-            # Truncate each body/snippet to 600 characters to prevent 413 rate-limit errors
             if "body" in clean_em and isinstance(clean_em["body"], str):
                 clean_em["body"] = clean_em["body"][:600]
             if "snippet" in clean_em and isinstance(clean_em["snippet"], str):
