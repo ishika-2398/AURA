@@ -14,8 +14,11 @@ from gmail_service import fetch_live_order_emails_for_token
 
 load_dotenv()
 
-# Force-set working API credentials
-api_key = os.getenv("GROQ_API_KEY", "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").strip()
+# Read credentials dynamically from the environment
+api_key = os.getenv("GROQ_API_KEY", "").strip()
+if not api_key:
+    print("CRITICAL WARNING: GROQ_API_KEY environment variable is missing!")
+
 client = Groq(api_key=api_key)
 
 ACTIVE_MODEL = "openai/gpt-oss-20b"
@@ -28,8 +31,14 @@ SESSION_SECRET = os.getenv("SESSION_SECRET", "aura-super-secret-key-prod-2026")
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 
 # Google OAuth Credentials Fallback
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "786796474890-b1loroghl9a7dqmvh6dn9s7i74r9mhcl.apps.googleusercontent.com")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "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")
+GOOGLE_CLIENT_ID = os.getenv(
+    "GOOGLE_CLIENT_ID",
+    "786796474890-b1loroghl9a7dqmvh6dn9s7i74r9mhcl.apps.googleusercontent.com"
+)
+GOOGLE_CLIENT_SECRET = os.getenv(
+    "GOOGLE_CLIENT_SECRET",
+    "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"
+)
 
 # Google OAuth Setup
 oauth = OAuth()
@@ -249,7 +258,6 @@ def detect_ui_metadata(user_msg: str, ai_reply: str):
     if "bank" in combined and ("college" in combined or "fee" in combined or "portal" in combined):
         return f"Cross-Domain [Banking + Education] ({priority})", ["Verify RRN", "Exam Results", "Show My Orders"]
     
-    # Universal check for e-commerce, tracking, packages, or specific platforms
     ecommerce_keywords = [
         "order", "orders", "purplle", "purple", "nykaa", "amazon", "flipkart", 
         "myntra", "ajio", "meesho", "mamaearth", "swiggy", "zomato", "blinkit", 
@@ -279,7 +287,6 @@ def handle_chat(payload: ChatInput, request: Request):
 
     live_emails = []
     if user and user.get("access_token"):
-        # Retrieve up to 10 live order emails across all stores
         live_emails = fetch_live_order_emails_for_token(user.get("access_token"), limit=10)
 
     user_context = f"User Name: {user_name} | Email: {user_email}"
