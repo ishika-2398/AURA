@@ -22,7 +22,7 @@ _decoded_key = base64.b64decode(_ENCODED_FALLBACK.encode()).decode("utf-8") if _
 api_key = (os.getenv("GROQ_API_KEY") or _decoded_key).strip()
 client = Groq(api_key=api_key)
 
-ACTIVE_MODEL = "llama3-8b-8192"
+ACTIVE_MODEL = "gemma2-9b-it"
 VISION_MODEL = "qwen/qwen3.8-27b"
 
 app = FastAPI()
