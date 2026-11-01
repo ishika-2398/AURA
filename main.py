@@ -22,7 +22,7 @@ _decoded_key = base64.b64decode(_ENCODED_FALLBACK.encode()).decode("utf-8") if _
 api_key = (os.getenv("GROQ_API_KEY") or _decoded_key).strip()
 client = Groq(api_key=api_key)
 
-ACTIVE_MODEL = "openai/gpt-oss-20b"
+ACTIVE_MODEL = "llama-3.3-70b-versatile"
 VISION_MODEL = "qwen/qwen3.8-27b"
 
 app = FastAPI()
@@ -288,7 +288,16 @@ def handle_chat(payload: ChatInput, request: Request):
 
     live_emails = []
     if user and user.get("access_token"):
-        live_emails = fetch_live_order_emails_for_token(user.get("access_token"), limit=10)
+        # Limit to the 5 most recent emails to stay well within token budgets
+        raw_emails = fetch_live_order_emails_for_token(user.get("access_token"), limit=5)
+        for em in raw_emails:
+            clean_em = dict(em)
+            # Truncate each body/snippet to 600 characters to prevent 413 rate-limit errors
+            if "body" in clean_em and isinstance(clean_em["body"], str):
+                clean_em["body"] = clean_em["body"][:600]
+            if "snippet" in clean_em and isinstance(clean_em["snippet"], str):
+                clean_em["snippet"] = clean_em["snippet"][:300]
+            live_emails.append(clean_em)
 
     user_context = f"User Name: {user_name} | Email: {user_email}"
     if not user:
@@ -321,9 +330,9 @@ Guidelines:
 
     messages = [{"role": "system", "content": sys_prompt}]
     if payload.history:
-        for item in payload.history[-4:]:
+        for item in payload.history[-3:]:
             if isinstance(item, dict) and item.get("role") in ["user", "assistant"]:
-                messages.append({"role": item["role"], "content": str(item["content"])[:300]})
+                messages.append({"role": item["role"], "content": str(item["content"])[:250]})
 
     messages.append({"role": "user", "content": user_msg})
 
