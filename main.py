@@ -49,14 +49,17 @@ def get_active_groq_models(groq_client):
         if not chosen_chat:
             chosen_chat = active_ids[0] if active_ids else "llama-3.1-8b-instant"
 
-        # Vision model fallback selection
-        vision_candidates = [m for m in active_ids if "vision" in m.lower()]
-        chosen_vision = vision_candidates[0] if vision_candidates else "llama-3.2-11b-vision-preview"
+        # Look for active vision models, prioritizing Qwen multimodal
+        vision_candidates = [
+            m for m in active_ids 
+            if any(v in m.lower() for v in ["qwen3.8-27b", "vision", "scout", "muse-spark"])
+        ]
+        chosen_vision = vision_candidates[0] if vision_candidates else "qwen/qwen3.8-27b"
 
         return chosen_chat, chosen_vision
     except Exception as e:
         print(f"Model autodiscovery error: {e}")
-        return "llama-3.1-8b-instant", "llama-3.2-11b-vision-preview"
+        return "llama-3.1-8b-instant", "qwen/qwen3.8-27b"
 
 ACTIVE_MODEL, VISION_MODEL = get_active_groq_models(client)
 print(f"--> Bound to active Groq models: Chat='{ACTIVE_MODEL}', Vision='{VISION_MODEL}'")
@@ -249,20 +252,24 @@ async def upload_file(request: Request, file: UploadFile = File(...)):
             base64_image = base64.b64encode(contents).decode('utf-8')
             mime_type = "image/png" if filename_lower.endswith('.png') else "image/jpeg"
             
-            vision_completion = client.chat.completions.create(
-                model=VISION_MODEL,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": "Extract all text, titles, names, certificate details, exam schedules, or timings from this image precisely."},
-                            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}}
-                        ]
-                    }
-                ],
-                max_tokens=400
-            )
-            text_content = vision_completion.choices[0].message.content.strip()
+            try:
+                vision_completion = client.chat.completions.create(
+                    model=VISION_MODEL,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": "Extract all text, store names, invoice details, or numbers precisely from this document or screenshot."},
+                                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}}
+                            ]
+                        }
+                    ],
+                    max_tokens=400
+                )
+                text_content = vision_completion.choices[0].message.content.strip()
+            except Exception as vision_err:
+                print(f"Vision API extraction warning: {vision_err}")
+                text_content = f"[Attached image: {file.filename} - Uploaded and logged for review]"
         else:
             text_content = contents.decode("utf-8", errors="ignore")
         
@@ -360,8 +367,9 @@ You manage 3 primary desks: E-Commerce Logistics, Banking/UPI Refunds, and Acade
 [USER LIVE GMAIL INBOX EMAILS]:
 {json.dumps(live_emails)}
 
-Guidelines:
-- When the user asks about recent or latest orders, thoroughly check [USER LIVE GMAIL INBOX EMAILS]. Extract the store name (e.g., Purplle, Amazon, Nykaa, Flipkart), items purchased, order ID/number, tracking link/number, and shipment status.
+STRICT OPERATIONAL GUIDELINES:
+- NEVER ask the user for their Gmail, Google, or portal passwords or credentials. If they are not logged in, tell them to use the "Connect Gmail" button in the left sidebar.
+- When the user asks about recent or latest orders, thoroughly check [USER LIVE GMAIL INBOX EMAILS]. Extract the store name (e.g., Purplle, Amazon, Nykaa, Flipkart, Mamaearth), items purchased, order ID/number, tracking link/number, and shipment status.
 - Present orders clearly using a structured Markdown table with columns: Platform / Store | Item / Description | Order ID | Status / Tracking.
 - If live order emails are present in [USER LIVE GMAIL INBOX EMAILS], summarize them accurately without saying you could not find orders.
 - Only if both [USER LIVE GMAIL INBOX EMAILS] and [USER ORDERS & DATABASE RECORDS] are completely empty should you explain that no recent order confirmations were found.
@@ -377,7 +385,6 @@ Guidelines:
 
     try:
         completion = None
-        # Attempt completion with chosen ACTIVE_MODEL, falling back across common fast models if 404 occurs
         candidate_models = [ACTIVE_MODEL, "llama-3.1-8b-instant", "qwen-2.5-32b"]
         last_exception = None
 
