@@ -1,29 +1,46 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Privacy Policy - AuraSync Personal Assistant</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #333; line-height: 1.6; }
-        h1 { color: #0066cc; }
-    </style>
+  <meta charset="UTF-8">
+  <title>Privacy Policy - AURA Universal Sync</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+    h1, h2 { color: #111; }
+    .box { background: #f8fafc; border-left: 4px solid #2563eb; padding: 15px; margin: 20px 0; }
+  </style>
 </head>
 <body>
-    <h1>Privacy Policy for AuraSync Personal Assistant</h1>
-    <p>Effective date: October 30, 2026</p>
-    
-    <p>AuraSync Personal Assistant ("we", "our", or "us") operates the AuraSync web application. This page informs you of our policies regarding the collection, use, and disclosure of personal data when you use our service and the choices you have associated with that data.</p>
+  <h1>Privacy Policy for AURA Universal Sync</h1>
+  <p><strong>Last Updated:</strong> November 2026</p>
+  <p>AURA Universal Sync ("AURA", "we", "us") provides an AI-powered personal assistant designed to help users track e-commerce deliveries, refunds, and academic records. This policy explains how we collect, use, and protect your information.</p>
 
-    <h2>1. Information Collection and Use</h2>
-    <p>We request access to your Google Account data solely via the restricted scope <code>gmail.readonly</code>. This access is strictly limited to scanning and retrieving e-commerce order confirmations, delivery tracking updates, and financial refund notices directly requested by you inside the chat interface.</p>
+  <h2>1. Information We Access and Collect</h2>
+  <p>When you choose to connect your Google account via OAuth, AURA requests read-only access to your Gmail messages using the <code>https://www.googleapis.com/auth/gmail.readonly</code> scope.</p>
+  <ul>
+    <li><strong>Specific Data Accessed:</strong> We read email sender headers, subjects, and snippets strictly to detect e-commerce shipping notifications, courier tracking numbers, and delivery updates (e.g., Amazon, Flipkart, Purplle, Mamaearth).</li>
+    <li><strong>Data Not Accessed:</strong> We do not read, process, or store personal conversations, confidential correspondence, or emails unrelated to orders.</li>
+  </ul>
 
-    <h2>2. Data Processing and Storage</h2>
-    <p>Email data is processed on-demand to answer your support inquiries. We do not store, sell, rent, or distribute your email contents or personal information to any third parties. Data is never used for advertising or marketing purposes.</p>
+  <h2>2. How We Use Google User Data</h2>
+  <p>We use your Gmail data solely to provide customer-facing features within the AURA assistant interface—specifically to parse tracking numbers, delivery partners, and order statuses.</p>
 
-    <h2>3. Security</h2>
-    <p>The security of your data is important to us. All authentication tokens and communication use secure HTTPS encryption protocols.</p>
+  <div class="box">
+    <h2>3. Google API Limited Use Disclosure</h2>
+    <p>AURA's use and transfer of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank">Google API Services User Data Policy</a>, including the Limited Use requirements:</p>
+    <ul>
+      <li>We do not transfer or disclose Google user data to third parties, unless necessary to provide the service, comply with applicable laws, or as part of a merger/acquisition.</li>
+      <li>We do not use or transfer Google user data for serving advertisements, including personalized, re-targeted, or interest-based advertising.</li>
+      <li>We do not use Google user data to train, retrain, or fine-tune general AI, foundation, or machine learning models.</li>
+      <li>Human interaction with user email data is strictly prohibited unless authorized by the user for technical troubleshooting or security investigation.</li>
+    </ul>
+  </div>
 
-    <h2>4. Contact Us</h2>
-    <p>If you have any questions about this Privacy Policy, please contact us at dadaiahpalliishika@gmail.com.</p>
+  <h2>4. Data Storage and Deletion</h2>
+  <p>Parsed order summaries and transient tokens are stored securely in session storage and an encrypted local SQLite database. You can permanently revoke access and disconnect your Google account at any time by clicking the <strong>Disconnect</strong> button in the application sidebar, which purges the stored session tokens.</p>
+
+  <h2>5. Contact Us</h2>
+  <p>If you have any questions or data deletion requests, contact the developer at:<br>
+  <strong>Email:</strong> dadaiahpalliishika@gmail.com<br>
+  <strong>Application URL:</strong> https://aura-vz7f.onrender.com</p>
 </body>
 </html>
