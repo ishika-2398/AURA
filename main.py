@@ -28,22 +28,34 @@ def get_active_groq_models(groq_client):
         model_objs = groq_client.models.list().data
         active_ids = [m.id for m in model_objs if getattr(m, "active", True)]
         
-        # Priority list of trusted, standard production chat models (avoids gated/terms-gated models)
-        priority_models = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant"
+        # Exclude vision, whisper, guardrails, and terms-gated models
+        chat_candidates = [
+            m for m in active_ids 
+            if not any(x in m.lower() for x in ["vision", "whisper", "guard", "embed", "orpheus", "canopylabs"])
         ]
         
-        chosen_chat = next((m for m in priority_models if m in active_ids), "llama-3.3-70b-versatile")
+        # Priority list of fast, standard production models available on free/dev tiers
+        priority_models = [
+            "llama-3.1-8b-instant",
+            "qwen-2.5-32b",
+            "mixtral-8x7b-32768",
+            "llama-3.3-70b-versatile"
+        ]
+        
+        chosen_chat = next((m for m in priority_models if m in chat_candidates), None)
+        if not chosen_chat and chat_candidates:
+            chosen_chat = chat_candidates[0]
+        if not chosen_chat:
+            chosen_chat = "llama-3.1-8b-instant"
 
-        # Pick active vision model if available
-        vision_candidates = [m for m in active_ids if "vision" in m]
+        # Vision model fallback selection
+        vision_candidates = [m for m in active_ids if "vision" in m.lower()]
         chosen_vision = vision_candidates[0] if vision_candidates else "llama-3.2-11b-vision-preview"
 
         return chosen_chat, chosen_vision
     except Exception as e:
-        print(f"Model autodiscovery fallback due to: {e}")
-        return "llama-3.3-70b-versatile", "llama-3.2-11b-vision-preview"
+        print(f"Model autodiscovery error: {e}")
+        return "llama-3.1-8b-instant", "llama-3.2-11b-vision-preview"
 
 ACTIVE_MODEL, VISION_MODEL = get_active_groq_models(client)
 print(f"--> Bound to active Groq models: Chat='{ACTIVE_MODEL}', Vision='{VISION_MODEL}'")
