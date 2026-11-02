@@ -27,26 +27,27 @@ def get_active_groq_models(groq_client):
     try:
         model_objs = groq_client.models.list().data
         active_ids = [m.id for m in model_objs if getattr(m, "active", True)]
+        print(f"--> All active Groq models in your account: {active_ids}")
         
-        # Exclude vision, whisper, guardrails, and terms-gated models
+        # Exclude vision, whisper, guardrails, compound, and terms-restricted models
         chat_candidates = [
             m for m in active_ids 
-            if not any(x in m.lower() for x in ["vision", "whisper", "guard", "embed", "orpheus", "canopylabs"])
+            if not any(x in m.lower() for x in ["vision", "whisper", "guard", "embed", "orpheus", "canopylabs", "compound"])
         ]
         
-        # Priority list of fast, standard production models available on free/dev tiers
-        priority_models = [
+        # Priority order of preferred fast chat models
+        preferred = [
             "llama-3.1-8b-instant",
             "qwen-2.5-32b",
             "mixtral-8x7b-32768",
             "llama-3.3-70b-versatile"
         ]
         
-        chosen_chat = next((m for m in priority_models if m in chat_candidates), None)
+        chosen_chat = next((m for m in preferred if m in chat_candidates), None)
         if not chosen_chat and chat_candidates:
             chosen_chat = chat_candidates[0]
         if not chosen_chat:
-            chosen_chat = "llama-3.1-8b-instant"
+            chosen_chat = active_ids[0] if active_ids else "llama-3.1-8b-instant"
 
         # Vision model fallback selection
         vision_candidates = [m for m in active_ids if "vision" in m.lower()]
@@ -375,12 +376,31 @@ Guidelines:
     messages.append({"role": "user", "content": user_msg})
 
     try:
-        completion = client.chat.completions.create(
-            messages=messages,
-            model=ACTIVE_MODEL,
-            temperature=0.5,
-            max_tokens=600
-        )
+        completion = None
+        # Attempt completion with chosen ACTIVE_MODEL, falling back across common fast models if 404 occurs
+        candidate_models = [ACTIVE_MODEL, "llama-3.1-8b-instant", "qwen-2.5-32b"]
+        last_exception = None
+
+        for target_model in candidate_models:
+            try:
+                completion = client.chat.completions.create(
+                    messages=messages,
+                    model=target_model,
+                    temperature=0.5,
+                    max_tokens=600
+                )
+                if completion:
+                    break
+            except Exception as model_err:
+                last_exception = model_err
+                if "404" in str(model_err) or "model_not_found" in str(model_err):
+                    continue
+                else:
+                    raise model_err
+
+        if not completion:
+            raise last_exception
+
         ai_reply = completion.choices[0].message.content.strip()
         domain, actions = detect_ui_metadata(user_msg, ai_reply)
         return {
